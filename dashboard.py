@@ -111,10 +111,6 @@ def load_convergence():
 conv_corp_df, conv_qf_df, conv_clusters_df = load_convergence()
 transcript_df = load_data("earnings_transcript_signals.xlsx")
 
-# Add Source Portal links to permit data
-if not permit_df.empty and "Municipality" in permit_df.columns:
-    permit_df["Source Portal"] = permit_df["Municipality"].map(PERMIT_PORTALS)
-
 # ============================================================
 # SIDEBAR
 # ============================================================
@@ -209,6 +205,10 @@ PERMIT_PORTALS = {
     "Memphis": "https://data.opendatasoft.com/explore/dataset/shelby-county-building-and-demolition-permits@datamidsouth/",
     "Omaha": "https://www.civicdata.com/dataset/city-of-omaha-building-permits",
 }
+
+# Add Source Portal links to permit data
+if not permit_df.empty and "Municipality" in permit_df.columns:
+    permit_df["Source Portal"] = permit_df["Municipality"].map(PERMIT_PORTALS)
 
 
 # ============================================================
