@@ -37,16 +37,16 @@ st.markdown("""
     div[data-testid="stMetric"] label { color: #a8b2d1 !important; font-size: 0.85rem; }
     div[data-testid="stMetric"] div[data-testid="stMetricValue"] { color: #64ffda !important; }
 
-    /* Sidebar styling — light background for readability */
+    /* Sidebar styling — dark theme */
     section[data-testid="stSidebar"] {
-        background: #f8f9fa;
-        border-right: 1px solid #e0e0e0;
+        background: #1a1a2e;
+        border-right: 1px solid #233554;
     }
-    section[data-testid="stSidebar"] .stMarkdown { color: #1a1a2e; }
-    section[data-testid="stSidebar"] .stRadio label { color: #333 !important; font-weight: 500; }
-    section[data-testid="stSidebar"] .stRadio label:hover { color: #0f3460 !important; }
-    section[data-testid="stSidebar"] .stCaption { color: #666 !important; }
-    section[data-testid="stSidebar"] small { color: #555 !important; }
+    section[data-testid="stSidebar"] .stMarkdown { color: #e6f1ff; }
+    section[data-testid="stSidebar"] .stRadio label { color: #ccd6f6 !important; font-weight: 500; }
+    section[data-testid="stSidebar"] .stRadio label:hover { color: #64ffda !important; }
+    section[data-testid="stSidebar"] .stCaption { color: #8892b0 !important; }
+    section[data-testid="stSidebar"] small { color: #a8b2d1 !important; }
 
     /* Tables */
     .stDataFrame { border-radius: 8px; overflow: hidden; }
