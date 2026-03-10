@@ -204,6 +204,7 @@ PERMIT_PORTALS = {
     "St. Paul": "https://information.stpaul.gov/",
     "Memphis": "https://data.opendatasoft.com/explore/dataset/shelby-county-building-and-demolition-permits@datamidsouth/",
     "Omaha": "https://www.civicdata.com/dataset/city-of-omaha-building-permits",
+    "Milwaukee": "https://data.milwaukee.gov/dataset/buildingpermits",
 }
 
 # Add Source Portal links to permit data
@@ -481,6 +482,7 @@ elif page == "Building Permits":
             "Rochester": (43.1566, -77.6088), "Albany": (42.6526, -73.7562),
             "Harrisburg": (40.2732, -76.8867), "Allentown": (40.6084, -75.4902),
             "Sioux Falls": (43.5446, -96.7311), "Reno": (39.5296, -119.8138),
+            "Milwaukee": (43.0389, -87.9065),
         }
 
         # Filters
