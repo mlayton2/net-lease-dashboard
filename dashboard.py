@@ -204,15 +204,30 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Permit year filter (only visible on Building Permits page)
+    # Permit date filter (only visible on Building Permits page)
     if page == "Building Permits" and not permit_df.empty and "Filing Date" in permit_df.columns:
-        st.markdown("##### Permit Year")
-        permit_df["_filing_year"] = pd.to_datetime(permit_df["Filing Date"], errors="coerce").dt.year
+        st.markdown("##### Permit Date Range")
+        permit_df["_filing_date"] = pd.to_datetime(permit_df["Filing Date"], errors="coerce")
+        permit_df["_filing_year"] = permit_df["_filing_date"].dt.year
+
         available_years = sorted(permit_df["_filing_year"].dropna().unique().astype(int).tolist(), reverse=True)
-        year_options = ["All Years"] + [str(y) for y in available_years]
-        sel_year = st.selectbox("Year", year_options, index=0, label_visibility="collapsed")
-        if sel_year != "All Years":
-            permit_df = permit_df[permit_df["_filing_year"] == int(sel_year)]
+        year_labels = [str(y) for y in available_years]
+
+        permit_date_mode = st.radio(
+            "Filter by",
+            ["Last 12 Months", "Select Years", "All Time"],
+            index=0,
+            label_visibility="collapsed",
+        )
+        if permit_date_mode == "Last 12 Months":
+            from datetime import timedelta
+            cutoff = datetime.now() - timedelta(days=365)
+            permit_df = permit_df[permit_df["_filing_date"] >= cutoff]
+        elif permit_date_mode == "Select Years":
+            sel_years = st.multiselect("Years", year_labels, default=[year_labels[0]] if year_labels else [])
+            if sel_years:
+                permit_df = permit_df[permit_df["_filing_year"].isin([int(y) for y in sel_years])]
+        # "All Time" = no filter
         st.markdown("---")
 
     st.caption(f"Updated {datetime.now().strftime('%b %d, %Y %I:%M %p')}")
@@ -689,11 +704,17 @@ elif page == "Building Permits":
             st.plotly_chart(fig, use_container_width=True)
 
         with table_col:
+            sort_by = st.radio("Sort by", ["Most Recent", "Highest Value"], horizontal=True)
             display_cols = [c for c in ["Municipality", "State", "Filing Date", "Address",
                                          "Description", "Estimated Value", "Sq Ft",
                                          "Contractor", "Source Portal"]
                             if c in filtered.columns]
-            display = filtered[display_cols].sort_values("Estimated Value", ascending=False).copy()
+            if sort_by == "Most Recent":
+                display = filtered[display_cols].copy()
+                display["_sort_date"] = pd.to_datetime(display["Filing Date"], errors="coerce")
+                display = display.sort_values("_sort_date", ascending=False).drop(columns=["_sort_date"])
+            else:
+                display = filtered[display_cols].sort_values("Estimated Value", ascending=False).copy()
             col_config = {
                 "Estimated Value": st.column_config.NumberColumn(format="$%,.0f"),
                 "Sq Ft": st.column_config.NumberColumn(format="%,.0f"),
