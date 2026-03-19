@@ -203,6 +203,18 @@ with st.sidebar:
         st.markdown(f"<small>{name}: **{count:,}** records</small>", unsafe_allow_html=True)
 
     st.markdown("---")
+
+    # Permit year filter (only visible on Building Permits page)
+    if page == "Building Permits" and not permit_df.empty and "Filing Date" in permit_df.columns:
+        st.markdown("##### Permit Year")
+        permit_df["_filing_year"] = pd.to_datetime(permit_df["Filing Date"], errors="coerce").dt.year
+        available_years = sorted(permit_df["_filing_year"].dropna().unique().astype(int).tolist(), reverse=True)
+        year_options = ["All Years"] + [str(y) for y in available_years]
+        sel_year = st.selectbox("Year", year_options, index=0, label_visibility="collapsed")
+        if sel_year != "All Years":
+            permit_df = permit_df[permit_df["_filing_year"] == int(sel_year)]
+        st.markdown("---")
+
     st.caption(f"Updated {datetime.now().strftime('%b %d, %Y %I:%M %p')}")
 
 
@@ -566,29 +578,20 @@ elif page == "Building Permits":
             "Milwaukee": (43.0389, -87.9065),
         }
 
-        # Parse year from Filing Date for year filter
-        permit_df["_filing_year"] = pd.to_datetime(permit_df["Filing Date"], errors="coerce").dt.year
-        available_years = sorted(permit_df["_filing_year"].dropna().unique().astype(int).tolist(), reverse=True)
-        year_options = ["All Years"] + [str(y) for y in available_years]
-
         # Filters
-        f1, f2, f3, f4 = st.columns(4)
+        f1, f2, f3 = st.columns(3)
         with f1:
-            sel_year = st.selectbox("Year", year_options, index=0)
-        with f2:
             cities = ["All"] + sorted(permit_df["Municipality"].dropna().unique().tolist())
             sel_city = st.selectbox("City", cities)
-        with f3:
+        with f2:
             val_options = {"No minimum": 0, "$100K+": 100_000, "$500K+": 500_000,
                            "$1M+": 1_000_000, "$5M+": 5_000_000, "$10M+": 10_000_000}
             sel_val_label = st.selectbox("Min Value", list(val_options.keys()))
             min_val = val_options[sel_val_label]
-        with f4:
+        with f3:
             keyword = st.text_input("Keyword in description")
 
         filtered = permit_df.copy()
-        if sel_year != "All Years":
-            filtered = filtered[filtered["_filing_year"] == int(sel_year)]
         if sel_city != "All":
             filtered = filtered[filtered["Municipality"] == sel_city]
         if min_val > 0:
