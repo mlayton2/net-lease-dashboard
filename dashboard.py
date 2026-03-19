@@ -148,22 +148,23 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Recency filter
-    st.markdown("##### Recency Filter")
-    recency = st.radio(
-        "Show signals from",
-        ["All Time", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days"],
-        index=0,
-        label_visibility="collapsed",
-    )
-    recency_days = {"All Time": None, "Last 7 Days": 7, "Last 14 Days": 14,
-                    "Last 30 Days": 30, "Last 90 Days": 90}
+    # Recency filter (not shown on Building Permits — has its own year filter)
     recency_cutoff = None
-    if recency_days[recency] is not None:
-        from datetime import timedelta
-        recency_cutoff = (datetime.now() - timedelta(days=recency_days[recency])).strftime("%Y-%m-%d")
+    if page != "Building Permits":
+        st.markdown("##### Recency Filter")
+        recency = st.radio(
+            "Show signals from",
+            ["All Time", "Last 7 Days", "Last 14 Days", "Last 30 Days", "Last 90 Days"],
+            index=0,
+            label_visibility="collapsed",
+        )
+        recency_days = {"All Time": None, "Last 7 Days": 7, "Last 14 Days": 14,
+                        "Last 30 Days": 30, "Last 90 Days": 90}
+        if recency_days[recency] is not None:
+            from datetime import timedelta
+            recency_cutoff = (datetime.now() - timedelta(days=recency_days[recency])).strftime("%Y-%m-%d")
 
-    st.markdown("---")
+        st.markdown("---")
 
     # Apply recency filter to datasets with date columns
     if recency_cutoff:
