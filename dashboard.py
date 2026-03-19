@@ -91,6 +91,25 @@ def load_data(filename):
 
 
 corp_df = load_data("corporate_re_targets.xlsx")
+
+# Derive Quote Category from Signal Triggers if missing
+if not corp_df.empty and "Quote Category" not in corp_df.columns and "Signal Triggers" in corp_df.columns:
+    def _categorize(triggers):
+        t = str(triggers).lower()
+        if "sale-leaseback" in t or "sale leaseback" in t:
+            return "ACTIVE_MONETIZATION"
+        if "asset-light" in t or "asset light" in t:
+            return "ASSET_LIGHT_SHIFT"
+        if "build-to-suit" in t or "built-to-suit" in t or "ground-up" in t:
+            return "BUILD_TO_SUIT"
+        if any(kw in t for kw in ["capex", "capital", "expansion", "new facility",
+                                   "new distribution", "new warehouse", "new manufacturing"]):
+            return "CAPEX_EXPANSION"
+        if any(kw in t for kw in ["monetize", "surplus", "rationalization", "footprint"]):
+            return "FUTURE_INTENT"
+        return "OTHER"
+    corp_df["Quote Category"] = corp_df["Signal Triggers"].apply(_categorize)
+
 ercot_df = load_data("ercot_queue_scored.xlsx")
 nyiso_df = load_data("nyiso_queue_scored.xlsx")
 ferc_df = load_data("ferc_interconnection_filings.xlsx")
@@ -267,7 +286,7 @@ if page == "Signal Feed":
         st.markdown("### Top Corporate Targets")
         st.caption("Companies signaling future sale-leaseback or asset monetization")
         if not corp_df.empty and "Quote Category" in corp_df.columns:
-            priority = ["FUTURE_INTENT", "ACTIVE_MONETIZATION", "ASSET_LIGHT_SHIFT", "BUILD_TO_SUIT"]
+            priority = ["ACTIVE_MONETIZATION", "FUTURE_INTENT", "ASSET_LIGHT_SHIFT", "BUILD_TO_SUIT", "CAPEX_EXPANSION"]
             top = corp_df[corp_df["Quote Category"].isin(priority)].copy()
             top["_p"] = top["Quote Category"].map({c: i for i, c in enumerate(priority)})
             top = top.sort_values(["_p", "Best Score"], ascending=[True, False]).head(12)
