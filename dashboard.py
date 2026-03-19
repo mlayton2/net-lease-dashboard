@@ -176,7 +176,6 @@ with st.sidebar:
 
         corp_df = _filter_by_date(corp_df, "Most Recent Filing")
         transcript_df = _filter_by_date(transcript_df, "date")
-        permit_df = _filter_by_date(permit_df, "Filing Date")
         ferc_df = _filter_by_date(ferc_df, "filed_date")
 
     # Source toggles (for Signal Feed)
@@ -567,20 +566,29 @@ elif page == "Building Permits":
             "Milwaukee": (43.0389, -87.9065),
         }
 
+        # Parse year from Filing Date for year filter
+        permit_df["_filing_year"] = pd.to_datetime(permit_df["Filing Date"], errors="coerce").dt.year
+        available_years = sorted(permit_df["_filing_year"].dropna().unique().astype(int).tolist(), reverse=True)
+        year_options = ["All Years"] + [str(y) for y in available_years]
+
         # Filters
-        f1, f2, f3 = st.columns(3)
+        f1, f2, f3, f4 = st.columns(4)
         with f1:
+            sel_year = st.selectbox("Year", year_options, index=0)
+        with f2:
             cities = ["All"] + sorted(permit_df["Municipality"].dropna().unique().tolist())
             sel_city = st.selectbox("City", cities)
-        with f2:
+        with f3:
             val_options = {"No minimum": 0, "$100K+": 100_000, "$500K+": 500_000,
                            "$1M+": 1_000_000, "$5M+": 5_000_000, "$10M+": 10_000_000}
             sel_val_label = st.selectbox("Min Value", list(val_options.keys()))
             min_val = val_options[sel_val_label]
-        with f3:
+        with f4:
             keyword = st.text_input("Keyword in description")
 
         filtered = permit_df.copy()
+        if sel_year != "All Years":
+            filtered = filtered[filtered["_filing_year"] == int(sel_year)]
         if sel_city != "All":
             filtered = filtered[filtered["Municipality"] == sel_city]
         if min_val > 0:
