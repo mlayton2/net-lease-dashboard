@@ -179,6 +179,16 @@ with st.sidebar:
         permit_df = _filter_by_date(permit_df, "Filing Date")
         ferc_df = _filter_by_date(ferc_df, "filed_date")
 
+    # Source toggles (for Signal Feed)
+    st.markdown("##### Signal Feed Sources")
+    show_corporate = st.checkbox("Corporate Targets", value=True)
+    show_transcripts = st.checkbox("Earnings Transcripts", value=True)
+    show_permits = st.checkbox("Building Permits", value=True)
+    show_queues = st.checkbox("Interconnection Queues", value=True)
+    show_ferc = st.checkbox("FERC Filings", value=True)
+
+    st.markdown("---")
+
     # Data freshness
     st.markdown("##### Data Sources")
     sources = {
@@ -283,61 +293,83 @@ if page == "Signal Feed":
     left, right = st.columns([1, 1])
 
     with left:
-        st.markdown("### Top Corporate Targets")
-        st.caption("Companies signaling future sale-leaseback or asset monetization")
-        if not corp_df.empty and "Quote Category" in corp_df.columns:
-            priority = ["ACTIVE_MONETIZATION", "FUTURE_INTENT", "ASSET_LIGHT_SHIFT", "BUILD_TO_SUIT", "CAPEX_EXPANSION"]
-            top = corp_df[corp_df["Quote Category"].isin(priority)].copy()
-            top["_p"] = top["Quote Category"].map({c: i for i, c in enumerate(priority)})
-            top = top.sort_values(["_p", "Best Score"], ascending=[True, False]).head(12)
-            cols = [c for c in ["Company", "Ticker", "Quote Category", "Best Score", "Sector"]
-                    if c in top.columns]
-            st.dataframe(top[cols], use_container_width=True, hide_index=True)
+        if show_corporate:
+            st.markdown("### Top Corporate Targets")
+            st.caption("Companies signaling future sale-leaseback or asset monetization")
+            if corp_df.empty:
+                st.info("No corporate targets in selected time range.")
+            elif "Quote Category" in corp_df.columns:
+                priority = ["ACTIVE_MONETIZATION", "FUTURE_INTENT", "ASSET_LIGHT_SHIFT", "BUILD_TO_SUIT", "CAPEX_EXPANSION"]
+                top = corp_df[corp_df["Quote Category"].isin(priority)].copy()
+                top["_p"] = top["Quote Category"].map({c: i for i, c in enumerate(priority)})
+                top = top.sort_values(["_p", "Best Score"], ascending=[True, False]).head(12)
+                cols = [c for c in ["Company", "Ticker", "Quote Category", "Best Score", "Sector"]
+                        if c in top.columns]
+                st.dataframe(top[cols], use_container_width=True, hide_index=True)
 
     with right:
-        st.markdown("### Highest-Value Permits")
-        st.caption("Top permits per city (max 2 per city to show breadth)")
-        if not permit_df.empty and "Estimated Value" in permit_df.columns:
-            # Take top 2 per city to avoid Cleveland dominating
-            top_p = permit_df.dropna(subset=["Estimated Value"])
-            top_p = top_p.sort_values("Estimated Value", ascending=False)
-            top_p = top_p.groupby("Municipality").head(2).sort_values("Estimated Value", ascending=False).head(14)
-            top_p["Estimated Value"] = top_p["Estimated Value"].apply(format_currency)
-            cols = [c for c in ["Municipality", "Address", "Description", "Estimated Value"]
-                    if c in top_p.columns]
-            st.dataframe(top_p[cols], use_container_width=True, hide_index=True)
+        if show_permits:
+            st.markdown("### Highest-Value Permits")
+            st.caption("Top permits per city (max 2 per city to show breadth)")
+            if permit_df.empty:
+                st.info("No permits in selected time range.")
+            elif "Estimated Value" in permit_df.columns:
+                top_p = permit_df.dropna(subset=["Estimated Value"])
+                top_p = top_p.sort_values("Estimated Value", ascending=False)
+                top_p = top_p.groupby("Municipality").head(2).sort_values("Estimated Value", ascending=False).head(14)
+                top_p["Estimated Value"] = top_p["Estimated Value"].apply(format_currency)
+                cols = [c for c in ["Municipality", "Address", "Description", "Estimated Value"]
+                        if c in top_p.columns]
+                st.dataframe(top_p[cols], use_container_width=True, hide_index=True)
 
-    st.markdown("---")
+    # Earnings transcripts on Signal Feed
+    if show_transcripts:
+        st.markdown("---")
+        st.markdown("### Recent Earnings Call Signals")
+        if transcript_df.empty:
+            st.info("No transcript signals in selected time range.")
+        else:
+            top_t = transcript_df.sort_values("score", ascending=False).head(10)
+            tcols = [c for c in ["company", "ticker", "date", "score", "category", "top_keywords", "excerpt_text"]
+                     if c in top_t.columns]
+            st.dataframe(top_t[tcols], use_container_width=True, hide_index=True,
+                         column_config={"excerpt_text": st.column_config.TextColumn("Key Excerpts", width="large")})
 
-    # Interconnection projects side by side
-    left, right = st.columns(2)
+    if show_queues:
+        st.markdown("---")
 
-    with left:
-        st.markdown("### Top ERCOT Projects")
-        if not ercot_df.empty:
-            sc = "NL_Score" if "NL_Score" in ercot_df.columns else "score"
-            top_e = ercot_df.sort_values(sc, ascending=False).head(8)
-            ecols = [c for c in ["Project Name", "Fuel", "MW", "County", sc]
-                     if c in top_e.columns]
-            st.dataframe(top_e[ecols], use_container_width=True, hide_index=True)
+        # Interconnection projects side by side
+        left, right = st.columns(2)
 
-    with right:
-        st.markdown("### Top NYISO Projects")
-        if not nyiso_df.empty:
-            top_n = nyiso_df.sort_values("score", ascending=False).head(8)
-            ncols = [c for c in ["Project Name", "Type/ Fuel", "SP (MW)", "County", "score"]
-                     if c in top_n.columns]
-            st.dataframe(top_n[ncols], use_container_width=True, hide_index=True)
+        with left:
+            st.markdown("### Top ERCOT Projects")
+            if not ercot_df.empty:
+                sc = "NL_Score" if "NL_Score" in ercot_df.columns else "score"
+                top_e = ercot_df.sort_values(sc, ascending=False).head(8)
+                ecols = [c for c in ["Project Name", "Fuel", "MW", "County", sc]
+                         if c in top_e.columns]
+                st.dataframe(top_e[ecols], use_container_width=True, hide_index=True)
 
-    st.markdown("---")
+        with right:
+            st.markdown("### Top NYISO Projects")
+            if not nyiso_df.empty:
+                top_n = nyiso_df.sort_values("score", ascending=False).head(8)
+                ncols = [c for c in ["Project Name", "Type/ Fuel", "SP (MW)", "County", "score"]
+                         if c in top_n.columns]
+                st.dataframe(top_n[ncols], use_container_width=True, hide_index=True)
 
-    # Recent FERC filings
-    st.markdown("### Latest FERC Filings")
-    if not ferc_df.empty:
-        recent = ferc_df.sort_values("filed_date", ascending=False).head(10)
-        fcols = [c for c in ["filed_date", "docket", "company", "project_id", "description"]
-                 if c in recent.columns]
-        st.dataframe(recent[fcols], use_container_width=True, hide_index=True)
+    if show_ferc:
+        st.markdown("---")
+
+        # Recent FERC filings
+        st.markdown("### Latest FERC Filings")
+        if ferc_df.empty:
+            st.info("No FERC filings in selected time range.")
+        else:
+            recent = ferc_df.sort_values("filed_date", ascending=False).head(10)
+            fcols = [c for c in ["filed_date", "docket", "company", "project_id", "description"]
+                     if c in recent.columns]
+            st.dataframe(recent[fcols], use_container_width=True, hide_index=True)
 
 
 # ============================================================
