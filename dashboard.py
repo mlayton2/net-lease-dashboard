@@ -452,12 +452,14 @@ elif page == "Corporate Targets":
 
         with table_col:
             display_cols = [c for c in ["Company", "Ticker", "Quote Category", "Best Score",
-                                         "Sector", "Industry", "Market Cap", "Filing Quote"]
+                                         "Filing Types", "Sector", "Industry", "Market Cap",
+                                         "Source URL", "Filing Quote"]
                             if c in filtered.columns]
             st.dataframe(filtered[display_cols].sort_values("Best Score", ascending=False),
                          use_container_width=True, hide_index=True, height=450,
                          column_config={
                              "Market Cap": st.column_config.NumberColumn(format="$%,.0f"),
+                             "Source URL": st.column_config.LinkColumn("Source", display_text="View"),
                          })
 
         csv_download(filtered, "corporate_targets.csv", "Export Corporate Targets CSV")
