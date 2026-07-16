@@ -129,6 +129,10 @@ def load_convergence():
 
 conv_corp_df, conv_qf_df, conv_clusters_df = load_convergence()
 transcript_df = load_data("earnings_transcript_signals.xlsx")
+xbrl_df = load_data("xbrl_slb_candidates.xlsx")
+bk_df = load_data("bankruptcy_ch11.xlsx")
+warn_df = load_data("warn_notices.xlsx")
+news_df = load_data("news_signals.xlsx")
 
 # ============================================================
 # SIDEBAR
@@ -142,7 +146,8 @@ with st.sidebar:
         "Navigate",
         ["Signal Feed", "Corporate Targets", "Earnings Transcripts",
          "Building Permits", "Interconnection Queues", "FERC Filings",
-         "Convergence Signals"],
+         "Convergence Signals", "XBRL Balance Screen", "Distress Watch",
+         "WARN Notices", "News Signals"],
         label_visibility="collapsed",
     )
 
@@ -178,6 +183,9 @@ with st.sidebar:
         corp_df = _filter_by_date(corp_df, "Most Recent Filing")
         transcript_df = _filter_by_date(transcript_df, "date")
         ferc_df = _filter_by_date(ferc_df, "filed_date")
+        news_df = _filter_by_date(news_df, "published_date")
+        warn_df = _filter_by_date(warn_df, "notice_date")
+        bk_df = _filter_by_date(bk_df, "date_filed")
 
     # Source toggles (for Signal Feed)
     st.markdown("##### Signal Feed Sources")
@@ -199,6 +207,10 @@ with st.sidebar:
         "FERC": len(ferc_df),
         "Transcripts": len(transcript_df),
         "Convergence": len(conv_corp_df) + len(conv_qf_df),
+        "XBRL Screen": len(xbrl_df),
+        "Bankruptcy": len(bk_df),
+        "WARN": len(warn_df),
+        "News": len(news_df),
     }
     for name, count in sources.items():
         st.markdown(f"<small>{name}: **{count:,}** records</small>", unsafe_allow_html=True)
@@ -1009,3 +1021,281 @@ elif page == "Convergence Signals":
                 csv_download(filtered_cl, "permit_clusters.csv", "Export Clusters CSV")
         else:
             st.info("No permit clusters found.")
+
+
+# ============================================================
+# PAGE: XBRL BALANCE SCREEN
+# ============================================================
+elif page == "XBRL Balance Screen":
+    st.markdown("# XBRL Balance-Sheet Screen")
+    st.caption("Sale-leaseback candidates screened from SEC XBRL frames — owned real estate concentration, near-term debt walls, proven SLB sellers")
+
+    if xbrl_df.empty:
+        st.info("No XBRL screen data yet — it will appear here after the next data deploy.")
+    else:
+        # Filters
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            states = ["All"] + (sorted(xbrl_df["State"].dropna().unique().tolist()) if "State" in xbrl_df.columns else [])
+            sel_state = st.selectbox("State", states, key="xbrl_state")
+        with f2:
+            max_sc = max(int(xbrl_df["Score"].max()), 1) if "Score" in xbrl_df.columns else 100
+            min_sc = st.slider("Min Score", 0, max_sc, 0, key="xbrl_score")
+        with f3:
+            st.markdown("<br>", unsafe_allow_html=True)
+            proven_only = st.checkbox("Proven SLB sellers only", key="xbrl_proven")
+
+        filtered = xbrl_df.copy()
+        if sel_state != "All" and "State" in filtered.columns:
+            filtered = filtered[filtered["State"] == sel_state]
+        if min_sc > 0 and "Score" in filtered.columns:
+            filtered = filtered[filtered["Score"] >= min_sc]
+        _proven_mask = None
+        if "Proven SLB Seller" in filtered.columns:
+            _proven_mask = filtered["Proven SLB Seller"].astype(str).str.lower().isin(["yes", "true", "1"])
+        if proven_only and _proven_mask is not None:
+            filtered = filtered[_proven_mask]
+            _proven_mask = _proven_mask[_proven_mask]
+
+        # Metrics
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Candidates", f"{len(filtered):,}")
+        m2.metric("Proven SLB Sellers", f"{int(_proven_mask.sum()):,}" if _proven_mask is not None else "—")
+        if "Owns Ratio" in filtered.columns and filtered["Owns Ratio"].notna().any():
+            m3.metric("Median Owns Ratio", f"{filtered['Owns Ratio'].median():.2f}")
+        else:
+            m3.metric("Median Owns Ratio", "—")
+
+        st.markdown("---")
+
+        # Chart + Table
+        chart_col, table_col = st.columns([2, 5])
+
+        with chart_col:
+            if "Score" in filtered.columns and "Company" in filtered.columns and len(filtered) > 0:
+                top20 = filtered.nlargest(20, "Score").sort_values("Score", ascending=True)
+                fig = px.bar(top20, x="Score", y="Company", orientation="h",
+                             color_discrete_sequence=["#64ffda"],
+                             labels={"Score": "Score", "Company": ""})
+                fig = make_chart(fig, height=450)
+                fig.update_layout(title="Top 20 by Score")
+                st.plotly_chart(fig, use_container_width=True)
+
+        with table_col:
+            display_cols = [c for c in ["Rank", "Score", "Company", "Ticker", "Industry",
+                                         "State", "PP&E Net ($M)", "Lease ROU ($M)",
+                                         "Owns Ratio", "Debt Wall 24mo ($M)", "Wall / PP&E",
+                                         "Proven SLB Seller", "As Of Quarter"]
+                            if c in filtered.columns]
+            col_config = {
+                "PP&E Net ($M)": st.column_config.NumberColumn(format="$%,.0f"),
+                "Lease ROU ($M)": st.column_config.NumberColumn(format="$%,.0f"),
+                "Debt Wall 24mo ($M)": st.column_config.NumberColumn(format="$%,.0f"),
+                "Owns Ratio": st.column_config.NumberColumn(format="%.2f"),
+                "Wall / PP&E": st.column_config.NumberColumn(format="%.2f"),
+            }
+            sort_col = "Score" if "Score" in filtered.columns else display_cols[0]
+            st.dataframe(filtered[display_cols].sort_values(sort_col, ascending=False),
+                         use_container_width=True, hide_index=True, height=450,
+                         column_config=col_config)
+
+            csv_download(filtered, "xbrl_slb_candidates.csv", "Export XBRL Candidates CSV")
+
+
+# ============================================================
+# PAGE: DISTRESS WATCH
+# ============================================================
+elif page == "Distress Watch":
+    st.markdown("# Distress Watch")
+    st.caption("Chapter 11 dockets from CourtListener RECAP — distressed debtors often monetize owned real estate via 363 sales and sale-leasebacks")
+
+    if bk_df.empty:
+        st.info("No bankruptcy docket data yet — it will appear here after the next data deploy.")
+    else:
+        # Target markets (secondary/tertiary focus states)
+        TARGET_STATES = {"SC", "TN", "AL", "GA", "KY", "OH", "IN", "MI", "IA", "KS",
+                         "TX", "LA", "AR", "OK", "ID", "NV", "WA", "MT", "SD", "ND",
+                         "PA", "NY"}
+
+        # Filters
+        f1, f2 = st.columns(2)
+        with f1:
+            states = ["All"] + (sorted(bk_df["state"].dropna().unique().tolist()) if "state" in bk_df.columns else [])
+            sel_state = st.selectbox("State", states, key="bk_state")
+        with f2:
+            courts = ["All"] + (sorted(bk_df["court"].dropna().unique().tolist()) if "court" in bk_df.columns else [])
+            sel_court = st.selectbox("Court", courts, key="bk_court")
+
+        filtered = bk_df.copy()
+        if sel_state != "All" and "state" in filtered.columns:
+            filtered = filtered[filtered["state"] == sel_state]
+        if sel_court != "All" and "court" in filtered.columns:
+            filtered = filtered[filtered["court"] == sel_court]
+
+        _matched = pd.Series(False, index=filtered.index)
+        if "matched_entity" in filtered.columns:
+            _matched = filtered["matched_entity"].fillna("").astype(str).str.strip() != ""
+
+        # Metrics
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Total Dockets", f"{len(filtered):,}")
+        m2.metric("Matched Entities", f"{int(_matched.sum()):,}")
+        if "state" in filtered.columns:
+            in_target = filtered["state"].isin(TARGET_STATES).sum()
+            m3.metric("In Target States", f"{int(in_target):,}")
+        else:
+            m3.metric("In Target States", "—")
+
+        st.caption("matched_entity = debtor already carried signals elsewhere in our system "
+                   "(SEC filings, WARN, news) — the strongest convergence flag.")
+
+        st.markdown("---")
+
+        # Table — matched entities highlighted first
+        display = filtered.copy()
+        display["_matched"] = _matched
+        sort_cols = ["_matched"] + (["score"] if "score" in display.columns else [])
+        display = display.sort_values(sort_cols, ascending=[False] * len(sort_cols))
+        display_cols = [c for c in ["matched_entity", "case_name", "debtor_name", "court",
+                                     "state", "date_filed", "chapter", "score", "docket_url"]
+                        if c in display.columns]
+        col_config = {
+            "docket_url": st.column_config.LinkColumn("Docket", display_text="View"),
+            "matched_entity": st.column_config.TextColumn("Matched Entity"),
+        }
+        st.dataframe(display[display_cols], use_container_width=True, hide_index=True,
+                     height=500, column_config=col_config)
+
+        csv_download(filtered, "bankruptcy_ch11.csv", "Export Chapter 11 CSV")
+
+
+# ============================================================
+# PAGE: WARN NOTICES
+# ============================================================
+elif page == "WARN Notices":
+    st.markdown("# WARN Notices")
+    st.caption("WARN Act plant-closure and mass-layoff notices — closures free up owned real estate (surplus-RE signal)")
+
+    if warn_df.empty:
+        st.info("No WARN notice data yet — it will appear here after the next data deploy.")
+    else:
+        # Filters
+        f1, f2 = st.columns(2)
+        with f1:
+            states = ["All"] + (sorted(warn_df["state"].dropna().unique().tolist()) if "state" in warn_df.columns else [])
+            sel_state = st.selectbox("State", states, key="warn_state")
+        with f2:
+            types = ["All"] + (sorted(warn_df["notice_type"].dropna().unique().tolist()) if "notice_type" in warn_df.columns else [])
+            sel_type = st.selectbox("Notice Type", types, key="warn_type")
+
+        filtered = warn_df.copy()
+        if sel_state != "All" and "state" in filtered.columns:
+            filtered = filtered[filtered["state"] == sel_state]
+        if sel_type != "All" and "notice_type" in filtered.columns:
+            filtered = filtered[filtered["notice_type"] == sel_type]
+
+        # Metrics
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Notices", f"{len(filtered):,}")
+        if "notice_type" in filtered.columns:
+            m2.metric("Closures", f"{len(filtered[filtered['notice_type'] == 'closure']):,}")
+        else:
+            m2.metric("Closures", "—")
+        if "headcount" in filtered.columns and filtered["headcount"].notna().any():
+            m3.metric("Total Headcount", f"{int(filtered['headcount'].sum()):,}")
+        else:
+            m3.metric("Total Headcount", "—")
+
+        st.markdown("---")
+
+        # Chart + Table
+        chart_col, table_col = st.columns([2, 5])
+
+        with chart_col:
+            if "state" in filtered.columns and "headcount" in filtered.columns and len(filtered) > 0:
+                state_hc = (filtered.groupby("state")["headcount"].sum()
+                            .sort_values(ascending=True).tail(15))
+                fig = px.bar(x=state_hc.values, y=state_hc.index, orientation="h",
+                             color_discrete_sequence=["#f78166"],
+                             labels={"x": "Headcount", "y": ""})
+                fig = make_chart(fig, height=400)
+                fig.update_layout(title="Headcount by State")
+                st.plotly_chart(fig, use_container_width=True)
+
+        with table_col:
+            display_cols = [c for c in ["state", "company_name", "location", "county",
+                                         "notice_date", "effective_date", "headcount",
+                                         "notice_type", "score", "source_url"]
+                            if c in filtered.columns]
+            col_config = {
+                "headcount": st.column_config.NumberColumn("Headcount", format="%,.0f"),
+                "source_url": st.column_config.LinkColumn("Source", display_text="View"),
+            }
+            sort_col = "score" if "score" in filtered.columns else display_cols[0]
+            st.dataframe(filtered[display_cols].sort_values(sort_col, ascending=False),
+                         use_container_width=True, hide_index=True, height=450,
+                         column_config=col_config)
+
+            csv_download(filtered, "warn_notices.csv", "Export WARN CSV")
+
+
+# ============================================================
+# PAGE: NEWS SIGNALS
+# ============================================================
+elif page == "News Signals":
+    st.markdown("# News Signals")
+    st.caption("Trade-press and state-commerce announcement feeds — expansions, relocations, franchise M&A")
+
+    if news_df.empty:
+        st.info("No news signal data yet — it will appear here after the next data deploy.")
+    else:
+        # Filters
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            feeds = ["All"] + (sorted(news_df["source_feed"].dropna().unique().tolist()) if "source_feed" in news_df.columns else [])
+            sel_feed = st.selectbox("Source Feed", feeds, key="news_feed")
+        with f2:
+            states = ["All"] + (sorted(news_df["state"].dropna().unique().tolist()) if "state" in news_df.columns else [])
+            sel_state = st.selectbox("State", states, key="news_state")
+        with f3:
+            max_sc = max(int(news_df["score"].max()), 1) if "score" in news_df.columns else 100
+            min_sc = st.slider("Min Score", 0, max_sc, 0, key="news_score")
+
+        filtered = news_df.copy()
+        if sel_feed != "All" and "source_feed" in filtered.columns:
+            filtered = filtered[filtered["source_feed"] == sel_feed]
+        if sel_state != "All" and "state" in filtered.columns:
+            filtered = filtered[filtered["state"] == sel_state]
+        if min_sc > 0 and "score" in filtered.columns:
+            filtered = filtered[filtered["score"] >= min_sc]
+
+        # Metrics
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Signals", f"{len(filtered):,}")
+        m2.metric("Feeds", f"{filtered['source_feed'].nunique():,}" if "source_feed" in filtered.columns else "—")
+        if "score" in filtered.columns and len(filtered) > 0:
+            m3.metric("Avg Score", f"{filtered['score'].mean():.1f}")
+        else:
+            m3.metric("Avg Score", "—")
+
+        st.markdown("---")
+
+        # Table
+        sort_by = st.radio("Sort by", ["Highest Score", "Most Recent"], horizontal=True, key="news_sort")
+        display_cols = [c for c in ["source_feed", "title", "company_name", "city", "state",
+                                     "published_date", "score", "url"]
+                        if c in filtered.columns]
+        display = filtered[display_cols].copy()
+        if sort_by == "Most Recent" and "published_date" in display.columns:
+            display["_sort_date"] = pd.to_datetime(display["published_date"], errors="coerce")
+            display = display.sort_values("_sort_date", ascending=False).drop(columns=["_sort_date"])
+        elif "score" in display.columns:
+            display = display.sort_values("score", ascending=False)
+        col_config = {
+            "title": st.column_config.TextColumn("Title", width="large"),
+            "url": st.column_config.LinkColumn("Link", display_text="View"),
+        }
+        st.dataframe(display, use_container_width=True, hide_index=True, height=500,
+                     column_config=col_config)
+
+        csv_download(filtered, "news_signals.csv", "Export News Signals CSV")
