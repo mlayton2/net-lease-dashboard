@@ -133,6 +133,9 @@ xbrl_df = load_data("xbrl_slb_candidates.xlsx")
 bk_df = load_data("bankruptcy_ch11.xlsx")
 warn_df = load_data("warn_notices.xlsx")
 news_df = load_data("news_signals.xlsx")
+fdd_df = load_data("fdd_projections.xlsx")
+incentive_df = load_data("incentives.xlsx")
+ats_df = load_data("re_job_postings.xlsx")
 
 # ============================================================
 # SIDEBAR
@@ -147,7 +150,8 @@ with st.sidebar:
         ["Signal Feed", "Corporate Targets", "Earnings Transcripts",
          "Building Permits", "Interconnection Queues", "FERC Filings",
          "Convergence Signals", "XBRL Balance Screen", "Distress Watch",
-         "WARN Notices", "News Signals"],
+         "WARN Notices", "News Signals", "FDD Pipeline", "Incentive Awards",
+         "RE Job Postings"],
         label_visibility="collapsed",
     )
 
@@ -186,6 +190,9 @@ with st.sidebar:
         news_df = _filter_by_date(news_df, "published_date")
         warn_df = _filter_by_date(warn_df, "notice_date")
         bk_df = _filter_by_date(bk_df, "date_filed")
+        ats_df = _filter_by_date(ats_df, "posting_date")
+        # fdd_df / incentive_df are year-granular — recency filter would
+        # blank them misleadingly, so they're intentionally excluded
 
     # Source toggles (for Signal Feed)
     st.markdown("##### Signal Feed Sources")
@@ -211,6 +218,9 @@ with st.sidebar:
         "Bankruptcy": len(bk_df),
         "WARN": len(warn_df),
         "News": len(news_df),
+        "FDD Pipeline": len(fdd_df),
+        "Incentives": len(incentive_df),
+        "RE Jobs": len(ats_df),
     }
     for name, count in sources.items():
         st.markdown(f"<small>{name}: **{count:,}** records</small>", unsafe_allow_html=True)
@@ -1299,3 +1309,224 @@ elif page == "News Signals":
                      column_config=col_config)
 
         csv_download(filtered, "news_signals.csv", "Export News Signals CSV")
+
+
+# ============================================================
+# PAGE: FDD PIPELINE
+# ============================================================
+elif page == "FDD Pipeline":
+    st.markdown("# FDD Pipeline")
+    st.caption("FDD Item 20 Table 5 projected new-outlet openings by state (MN CARDS registry) — a brand projecting units in a state is direct BTS/STNL demand before any site is picked")
+
+    if fdd_df.empty:
+        st.info("No FDD projection data yet — it will appear here after the next data deploy.")
+    else:
+        # Filters
+        f1, f2, f3, f4 = st.columns(4)
+        with f1:
+            brands = ["All"] + (sorted(fdd_df["brand"].dropna().unique().tolist()) if "brand" in fdd_df.columns else [])
+            sel_brand = st.selectbox("Brand", brands, key="fdd_brand")
+        with f2:
+            segments = ["All"] + (sorted(fdd_df["segment"].dropna().unique().tolist()) if "segment" in fdd_df.columns else [])
+            sel_segment = st.selectbox("Segment", segments, key="fdd_segment")
+        with f3:
+            states = ["All"] + (sorted(fdd_df["state"].dropna().unique().tolist()) if "state" in fdd_df.columns else [])
+            sel_state = st.selectbox("State", states, key="fdd_state")
+        with f4:
+            target_only = st.checkbox("Target states only", key="fdd_target")
+
+        filtered = fdd_df.copy()
+        if sel_brand != "All" and "brand" in filtered.columns:
+            filtered = filtered[filtered["brand"] == sel_brand]
+        if sel_segment != "All" and "segment" in filtered.columns:
+            filtered = filtered[filtered["segment"] == sel_segment]
+        if sel_state != "All" and "state" in filtered.columns:
+            filtered = filtered[filtered["state"] == sel_state]
+        if target_only and "target_state" in filtered.columns:
+            filtered = filtered[filtered["target_state"] == "Yes"]
+
+        # Total projected units per row (franchised + company-owned)
+        for col in ("projected_franchised", "projected_company_owned"):
+            if col in filtered.columns:
+                filtered[col] = pd.to_numeric(filtered[col], errors="coerce")
+        if "projected_franchised" in filtered.columns:
+            total = filtered["projected_franchised"].fillna(0)
+            if "projected_company_owned" in filtered.columns:
+                total = total + filtered["projected_company_owned"].fillna(0)
+            filtered["projected_total"] = total
+
+        # Metrics
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Projections", f"{len(filtered):,}")
+        m2.metric("Brands", f"{filtered['brand'].nunique():,}" if "brand" in filtered.columns else "—")
+        if "projected_total" in filtered.columns and len(filtered) > 0:
+            m3.metric("Projected Units", f"{int(filtered['projected_total'].sum()):,}")
+        else:
+            m3.metric("Projected Units", "—")
+
+        st.markdown("---")
+
+        # Chart + Table
+        chart_col, table_col = st.columns([2, 5])
+
+        with chart_col:
+            if "state" in filtered.columns and "projected_total" in filtered.columns and len(filtered) > 0:
+                state_units = (filtered.groupby("state")["projected_total"].sum()
+                               .sort_values(ascending=True).tail(15))
+                fig = px.bar(x=state_units.values, y=state_units.index, orientation="h",
+                             color_discrete_sequence=["#34d399"],
+                             labels={"x": "Projected Units", "y": ""})
+                fig = make_chart(fig, height=400)
+                fig.update_layout(title="Projected Units by State")
+                st.plotly_chart(fig, use_container_width=True)
+
+        with table_col:
+            display_cols = [c for c in ["brand", "segment", "franchisor_entity", "fdd_year",
+                                         "state", "target_state", "projected_franchised",
+                                         "projected_company_owned", "score", "doc_url"]
+                            if c in filtered.columns]
+            col_config = {
+                "doc_url": st.column_config.LinkColumn("FDD", display_text="View"),
+            }
+            sort_col = "score" if "score" in filtered.columns else display_cols[0]
+            st.dataframe(filtered[display_cols].sort_values(sort_col, ascending=False),
+                         use_container_width=True, hide_index=True, height=450,
+                         column_config=col_config)
+
+            csv_download(filtered, "fdd_projections.csv", "Export FDD CSV")
+
+
+# ============================================================
+# PAGE: INCENTIVE AWARDS
+# ============================================================
+elif page == "Incentive Awards":
+    st.markdown("# Incentive Awards")
+    st.caption("State economic development incentive awards (IN / TN / NC / TX / MO / OH) — a company taking money to build or expand is an early BTS / sale-leaseback signal")
+
+    if incentive_df.empty:
+        st.info("No incentive data yet — it will appear here after the next data deploy.")
+    else:
+        # Filters
+        f1, f2, f3 = st.columns(3)
+        with f1:
+            states = ["All"] + (sorted(incentive_df["state"].dropna().unique().tolist()) if "state" in incentive_df.columns else [])
+            sel_state = st.selectbox("State", states, key="inc_state")
+        with f2:
+            types = ["All"] + (sorted(incentive_df["incentive_type"].dropna().unique().tolist()) if "incentive_type" in incentive_df.columns else [])
+            sel_type = st.selectbox("Incentive Type", types, key="inc_type")
+        with f3:
+            max_sc = max(int(incentive_df["score"].max()), 1) if "score" in incentive_df.columns else 100
+            min_sc = st.slider("Min Score", 0, max_sc, 0, key="inc_score")
+
+        filtered = incentive_df.copy()
+        if sel_state != "All" and "state" in filtered.columns:
+            filtered = filtered[filtered["state"] == sel_state]
+        if sel_type != "All" and "incentive_type" in filtered.columns:
+            filtered = filtered[filtered["incentive_type"] == sel_type]
+        if min_sc > 0 and "score" in filtered.columns:
+            filtered = filtered[filtered["score"] >= min_sc]
+
+        # Metrics
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Awards", f"{len(filtered):,}")
+        if "investment_amount" in filtered.columns and filtered["investment_amount"].notna().any():
+            m2.metric("Committed Investment", format_currency(filtered["investment_amount"].sum()))
+        else:
+            m2.metric("Committed Investment", "—")
+        if "jobs_committed" in filtered.columns and filtered["jobs_committed"].notna().any():
+            m3.metric("Jobs Committed", f"{int(filtered['jobs_committed'].sum()):,}")
+        else:
+            m3.metric("Jobs Committed", "—")
+
+        st.markdown("---")
+
+        # Chart + Table
+        chart_col, table_col = st.columns([2, 5])
+
+        with chart_col:
+            if "state" in filtered.columns and len(filtered) > 0:
+                if "investment_amount" in filtered.columns and filtered["investment_amount"].notna().any():
+                    state_inv = (filtered.groupby("state")["investment_amount"].sum()
+                                 .sort_values(ascending=True).tail(15))
+                    fig = px.bar(x=state_inv.values, y=state_inv.index, orientation="h",
+                                 color_discrete_sequence=["#eec643"],
+                                 labels={"x": "Committed Investment ($)", "y": ""})
+                    fig = make_chart(fig, height=400)
+                    fig.update_layout(title="Investment by State")
+                    st.plotly_chart(fig, use_container_width=True)
+
+        with table_col:
+            display_cols = [c for c in ["company_name", "state", "city", "county",
+                                         "incentive_type", "program", "investment_amount",
+                                         "jobs_committed", "incentive_value",
+                                         "approval_date", "score", "source_url"]
+                            if c in filtered.columns]
+            col_config = {
+                "investment_amount": st.column_config.NumberColumn("Investment", format="$%,.0f"),
+                "incentive_value": st.column_config.NumberColumn("Incentive $", format="$%,.0f"),
+                "jobs_committed": st.column_config.NumberColumn("Jobs", format="%,.0f"),
+                "source_url": st.column_config.LinkColumn("Source", display_text="View"),
+            }
+            sort_col = "score" if "score" in filtered.columns else display_cols[0]
+            st.dataframe(filtered[display_cols].sort_values(sort_col, ascending=False),
+                         use_container_width=True, hide_index=True, height=450,
+                         column_config=col_config)
+
+            csv_download(filtered, "incentive_awards.csv", "Export Incentives CSV")
+
+
+# ============================================================
+# PAGE: RE JOB POSTINGS
+# ============================================================
+elif page == "RE Job Postings":
+    st.markdown("# RE Job Postings")
+    st.caption("Corporate real-estate roles scraped from company ATS boards (Workday / Greenhouse / Lever) — a company hiring site-selection or construction talent is planning footprint growth")
+
+    if ats_df.empty:
+        st.info("No RE job posting data yet — it will appear here after the next data deploy.")
+    else:
+        # Filters
+        f1, f2 = st.columns(2)
+        with f1:
+            companies = ["All"] + (sorted(ats_df["company_name"].dropna().unique().tolist()) if "company_name" in ats_df.columns else [])
+            sel_co = st.selectbox("Company", companies, key="ats_company")
+        with f2:
+            max_sc = max(int(ats_df["score"].max()), 1) if "score" in ats_df.columns else 100
+            min_sc = st.slider("Min Score", 0, max_sc, 0, key="ats_score")
+
+        filtered = ats_df.copy()
+        if sel_co != "All" and "company_name" in filtered.columns:
+            filtered = filtered[filtered["company_name"] == sel_co]
+        if min_sc > 0 and "score" in filtered.columns:
+            filtered = filtered[filtered["score"] >= min_sc]
+
+        # Metrics
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Postings", f"{len(filtered):,}")
+        m2.metric("Companies", f"{filtered['company_name'].nunique():,}" if "company_name" in filtered.columns else "—")
+        if "score" in filtered.columns and len(filtered) > 0:
+            m3.metric("Avg Score", f"{filtered['score'].mean():.1f}")
+        else:
+            m3.metric("Avg Score", "—")
+
+        st.markdown("---")
+
+        # Table
+        sort_by = st.radio("Sort by", ["Highest Score", "Most Recent"], horizontal=True, key="ats_sort")
+        display_cols = [c for c in ["company_name", "job_title", "location", "posting_date",
+                                     "source", "keyword_matches", "score", "posting_url"]
+                        if c in filtered.columns]
+        display = filtered[display_cols].copy()
+        if sort_by == "Most Recent" and "posting_date" in display.columns:
+            display["_sort_date"] = pd.to_datetime(display["posting_date"], errors="coerce")
+            display = display.sort_values("_sort_date", ascending=False).drop(columns=["_sort_date"])
+        elif "score" in display.columns:
+            display = display.sort_values("score", ascending=False)
+        col_config = {
+            "job_title": st.column_config.TextColumn("Title", width="large"),
+            "posting_url": st.column_config.LinkColumn("Posting", display_text="View"),
+        }
+        st.dataframe(display, use_container_width=True, hide_index=True, height=500,
+                     column_config=col_config)
+
+        csv_download(filtered, "re_job_postings.csv", "Export RE Jobs CSV")
